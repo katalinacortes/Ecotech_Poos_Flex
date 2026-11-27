@@ -98,6 +98,26 @@ class EmpleadoDAO:
             conexion.close()
 
     @classmethod
+    def buscar_por_correo(cls, correo: str) -> Empleado | None:
+        conexion = abrir_conexion()
+        cursor = conexion.cursor()
+        try:
+            m = cls._marcador()
+            sql = f"""
+                SELECT id, nombre, correo, salario, fecha_inicio_contrato
+                FROM empleado
+                WHERE LOWER(correo) = {m}
+            """
+            cursor.execute(sql, (correo.strip().lower(),))
+            fila = cursor.fetchone()
+            if fila is None:
+                return None
+            return cls._fila_a_empleado(fila)
+        finally:
+            cursor.close()
+            conexion.close()
+
+    @classmethod
     def actualizar(cls, empleado: Empleado) -> int:
         conexion = abrir_conexion()
         cursor = conexion.cursor()

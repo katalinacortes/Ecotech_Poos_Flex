@@ -24,7 +24,9 @@ class ServicioAutenticacion:
         except Exception:
             return password == password_hash
 
-    def _obtener_o_crear_empleado(self, correo: str, rol: str, empleado_id: int | None = None) -> Empleado:
+    def _obtener_o_crear_empleado(
+        self, correo: str, rol: str, empleado_id: int | None = None, nombre: str | None = None
+    ) -> Empleado:
         if empleado_id is not None:
             emp_por_id = EmpleadoDAO.buscar_por_id(empleado_id)
             if emp_por_id is not None:
@@ -37,7 +39,7 @@ class ServicioAutenticacion:
         prefijo = correo.split("@")[0] if "@" in correo else correo
         etiqueta = "Administrador" if rol == "admin" else "Empleado"
         nuevo_emp = Empleado(
-            nombre=f"{etiqueta} {prefijo}",
+            nombre=nombre.strip() if nombre and nombre.strip() else f"{etiqueta} {prefijo}",
             correo=correo,
             salario=500000.0,
         )
@@ -49,6 +51,7 @@ class ServicioAutenticacion:
         password: str,
         rol: str = "empleado",
         empleado_id: int | None = None,
+        nombre: str | None = None,
     ) -> Usuario:
         correo_limpio = correo.strip().lower()
         rol_limpio = (rol or "empleado").strip().lower()
@@ -60,7 +63,7 @@ class ServicioAutenticacion:
             raise ValueError("Ingresa un correo electrónico válido.")
 
         password_hash = self._hashear_password(password)
-        empleado = self._obtener_o_crear_empleado(correo_limpio, rol_limpio, empleado_id)
+        empleado = self._obtener_o_crear_empleado(correo_limpio, rol_limpio, empleado_id, nombre)
 
         p = marcador_parametro()
         conexion = abrir_conexion()

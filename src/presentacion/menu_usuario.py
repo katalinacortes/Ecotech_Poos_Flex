@@ -1,4 +1,4 @@
-import getpass
+from presentacion.entrada import leer_password
 
 from dominio.usuario import Usuario
 from persistencia.empleado_dao import EmpleadoDAO
@@ -10,7 +10,7 @@ _servicio = ServicioAutenticacion()
 
 def iniciar_sesion() -> dict | None:
     nombre = input("Usuario: ").strip()
-    clave = getpass.getpass("Contraseña: ")
+    clave = leer_password("Contraseña: ")
     usuario = _servicio.iniciar_sesion(nombre, clave)
     if usuario is None:
         print("Usuario o contraseña incorrectos.")
@@ -36,7 +36,7 @@ def crear_cuenta_usuario() -> dict | None:
         return None
 
     nombre_usuario = input("Nuevo nombre de usuario: ").strip()
-    clave = getpass.getpass("Nueva contraseña: ")
+    clave = leer_password("Nueva contraseña: ")
 
     try:
         nombre_normalizado = Usuario.normalizar_usuario(nombre_usuario)

@@ -117,6 +117,20 @@ class UsuarioDAO:
             conexion.close()
 
     @classmethod
+    def actualizar_nombre_usuario(cls, id_usuario: int, nuevo_nombre: str) -> int:
+        conexion = abrir_conexion()
+        cursor = conexion.cursor()
+        try:
+            m = cls._marcador()
+            sql = f"UPDATE usuario SET nombre_usuario = {m} WHERE id = {m}"
+            cursor.execute(sql, (Usuario.normalizar_usuario(nuevo_nombre), id_usuario))
+            conexion.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+            conexion.close()
+
+    @classmethod
     def eliminar(cls, id_usuario: int) -> int:
         conexion = abrir_conexion()
         cursor = conexion.cursor()

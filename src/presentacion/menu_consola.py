@@ -1,18 +1,14 @@
 from datetime import date
-from getpass import getpass
-import json
-import urllib.error
-import urllib.request
 
 from dominio.departamento import Departamento
 from dominio.empleado import Empleado
 from dominio.proyecto import Proyecto
 from dominio.registro_tiempo import RegistroTiempo
-from persistencia.conexion import abrir_conexion, obtener_motor
 from persistencia.departamento_dao import DepartamentoDAO
 from persistencia.empleado_dao import EmpleadoDAO
 from persistencia.proyecto_dao import ProyectoDAO
 from persistencia.registro_tiempo_dao import RegistroTiempoDAO
+from presentacion.entrada import leer_password
 from presentacion.menu_empleado import MenuEmpleado
 from servicios.autenticacion import ServicioAutenticacion
 
@@ -58,72 +54,15 @@ class MenuConsola:
             except ValueError:
                 print("Usa el formato YYYY-MM-DD o deja vacío.")
 
-    @staticmethod
-    def _obtener_o_crear_empleado_por_correo(correo: str, rol: str) -> int:
-        for emp in EmpleadoDAO.listar():
-            if getattr(emp, "correo", "").strip().lower() == correo.lower():
-                return emp.id
-
-        nombre_base = correo.split("@")[0] if "@" in correo else correo
-        etiqueta_rol = "Admin" if rol == "admin" else "Empleado"
-        emp = Empleado(
-            nombre=f"{etiqueta_rol} {nombre_base}",
-            correo=correo,
-            salario=500000.0,
-        )
-        EmpleadoDAO.insertar(emp)
-        return emp.id
-
-    def _invocar_registro(self, correo: str, password: str, empleado_id: int, rol: str) -> None:
-        candidatos = [
-            "registrar",
-            "registrar_usuario",
-            "crear_usuario",
-            "registro",
-            "alta_usuario",
-        ]
-        for nombre_metodo in candidatos:
-            metodo = getattr(self.servicio_autenticacion, nombre_metodo, None)
-            if callable(metodo):
-                for args in (
-                    (correo, password, empleado_id, rol),
-                    (correo, correo, password, empleado_id, rol),
-                    (correo, password, rol),
-                ):
-                    try:
-                        metodo(*args)
-                        return
-                    except TypeError:
-                        continue
-
-        # Fallback directo con bcrypt si el servicio no expone un método de registro estándar
-        import bcrypt
-
-        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        conexion = abrir_conexion()
-        cursor = conexion.cursor()
-        motor = obtener_motor()
-        marcador = "?" if motor == "sqlite" else "%s"
-
-        cursor.execute(
-            f"""
-            INSERT INTO usuario (nombre_usuario, password_hash, rol, empleado_id)
-            VALUES ({marcador}, {marcador}, {marcador}, {marcador});
-            """,
-            (correo, password_hash, rol, empleado_id),
-        )
-        conexion.commit()
-        cursor.close()
-        conexion.close()
-
     def _registrar_usuario(self) -> None:
         print("\n=== REGISTRO DE USUARIO ===")
-        correo = self._leer_texto("Correo electrónico: ").lower()
+        nombre = self._leer_texto("Nombre: ")
+        correo = self._leer_texto("Nombre de usuario: ").lower()
         if "@" not in correo or "." not in correo.split("@")[-1]:
-            print("Ingresa un correo electrónico válido.")
+            print("El nombre de usuario debe ser un correo electrónico válido.")
             return
 
-        password = getpass("Contraseña (mínimo 4 caracteres): ")
+        password = leer_password("Contraseña (mínimo 4 caracteres): ")
         if len(password) < 4:
             print("La contraseña debe tener al menos 4 caracteres.")
             return
@@ -142,70 +81,18 @@ class MenuConsola:
             print("Ingresa 1 para Empleado o 2 para Administrador.")
 
         try:
-            empleado_id = self._obtener_o_crear_empleado_por_correo(correo, rol)
-            self._invocar_registro(correo, password, empleado_id, rol)
-            print(f"Registro completado como '{rol}' con ID de empleado: {empleado_id}.")
-            print("Ahora puedes iniciar sesión con tu correo, tu ID y tu contraseña.")
+            self.servicio_autenticacion.registrar_por_correo(
+                correo=correo,
+                password=password,
+                rol=rol,
+                nombre=nombre,
+            )
+            print(f"Registro completado como '{rol}'.")
+            print("Ahora puedes iniciar sesión con tu nombre de usuario y tu contraseña.")
         except ValueError as err:
             print(f"Error de validación: {err}")
         except Exception as err:
             print(f"No se pudo registrar el usuario: {err}")
-
-    def _buscar_usuario_por_correo(self, correo: str):
-        conexion = abrir_conexion()
-        cursor = conexion.cursor()
-        motor = obtener_motor()
-        marcador = "?" if motor == "sqlite" else "%s"
-
-        # Busca por correo en empleado o directamente en nombre_usuario
-        cursor.execute(
-            f"""
-            SELECT u.id, u.nombre_usuario, u.password_hash, u.rol, u.empleado_id
-            FROM usuario u
-            LEFT JOIN empleado e ON u.empleado_id = e.id
-            WHERE LOWER(u.nombre_usuario) = {marcador} OR LOWER(e.correo) = {marcador}
-            LIMIT 1;
-            """,
-            (correo.lower(), correo.lower()),
-        )
-        fila = cursor.fetchone()
-        cursor.close()
-        conexion.close()
-
-        if not fila:
-            return None
-
-        class _UsuarioSesion:
-            pass
-
-        u = _UsuarioSesion()
-        u.id = fila[0]
-        u.nombre_usuario = fila[1]
-        u.password_hash = fila[2]
-        u.rol = fila[3] or "empleado"
-        u.empleado_id = fila[4]
-        return u
-
-    def _verificar_password(self, usuario, password: str) -> bool:
-        # Intenta usar el servicio de autenticación si tiene método de verificación
-        for nombre_metodo in ("verificar_password", "validar_password", "iniciar_sesion"):
-            metodo = getattr(self.servicio_autenticacion, nombre_metodo, None)
-            if callable(metodo) and nombre_metodo != "iniciar_sesion":
-                try:
-                    return bool(metodo(password, getattr(usuario, "password_hash", "")))
-                except TypeError:
-                    continue
-
-        password_hash = getattr(usuario, "password_hash", "")
-        if not password_hash:
-            return False
-
-        try:
-            import bcrypt
-
-            return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-        except Exception:
-            return password == password_hash
 
     def iniciar_login(self):
         while True:
@@ -216,25 +103,15 @@ class MenuConsola:
             opcion = input("Selecciona una opción: ").strip()
 
             if opcion == "1":
-                correo = self._leer_texto("Correo electrónico: ").lower()
-                id_ingresado = self._leer_entero("ID: ")
-                password = getpass("Contraseña: ")
+                correo = self._leer_texto("Nombre de usuario: ").lower()
+                password = leer_password("Contraseña: ")
 
-                usuario = self._buscar_usuario_por_correo(correo)
+                usuario = self.servicio_autenticacion.iniciar_sesion(correo, password)
                 if usuario is None:
-                    print("No existe un usuario registrado con ese correo.")
+                    print("Nombre de usuario o contraseña incorrectos. Intenta de nuevo.")
                     continue
 
-                # Acepta tanto el ID del empleado asociado como el ID del usuario si coincide
-                if id_ingresado not in (usuario.empleado_id, usuario.id):
-                    print("El ID no coincide con el correo ingresado.")
-                    continue
-
-                if not self._verificar_password(usuario, password):
-                    print("Contraseña incorrecta. Intenta de nuevo.")
-                    continue
-
-                rol_legible = "Administrador" if usuario.rol.lower() == "admin" else "Empleado"
+                rol_legible = "Administrador" if usuario.rol == "admin" else "Empleado"
                 print(f"Sesión iniciada como {rol_legible} ({correo}).")
                 return usuario
 
